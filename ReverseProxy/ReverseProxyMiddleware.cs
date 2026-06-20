@@ -1,4 +1,6 @@
-﻿namespace ReverseProxy
+﻿using System.Net.Sockets;
+
+namespace ReverseProxy
 {
     public class ReverseProxyMiddleware
     {
@@ -13,19 +15,34 @@
         public async Task Invoke(HttpContext context)
         {
             var targetUri = BuildTargetUri(context.Request);
+            Console.WriteLine("hello: " + context.Request.Path);
 
-            if(targetUri!= null)
+            if (targetUri!= null)
             {
                 var targetRequestMessage = CreateRequestMessage(context, targetUri);
-
-                using (var responseMessage = await _httpClient.SendAsync(targetRequestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted))
+                Console.WriteLine("hyyo:" + targetRequestMessage);
+                try
                 {
-                    context.Response.StatusCode = (int)responseMessage.StatusCode;
-                    CopyFromTargetResponseHeaders(responseMessage, context);
+                    using (var responseMessage = await _httpClient.SendAsync(targetRequestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted))
+                    {
+                        context.Response.StatusCode = (int)responseMessage.StatusCode;
+                        CopyFromTargetResponseHeaders(responseMessage, context);
 
-                    await responseMessage.Content.CopyToAsync(context.Request.Body);
+                        await responseMessage.Content.CopyToAsync(context.Response.Body);
 
+                    }
                 }
+                catch (HttpRequestException ex)
+                {
+                    if(ex.InnerException is SocketException socketEx)
+                    {
+                        await context.Response.WriteAsync(socketEx.Message);
+                    }
+
+                    
+                }
+
+               
                 return;
 
             }
@@ -41,9 +58,10 @@
         {
             Uri targeturi = null;
 
-            if(request.Path.StartsWithSegments("/googleforms",out var remainingPath ))
+            if(request.Path.StartsWithSegments("/products", out var remainingPath ))
             {
-                targeturi = new Uri("https://docs.google.com/forms" + remainingPath);
+                targeturi = new Uri("https://localhost:7162/api/Product/get" + remainingPath);
+                Console.WriteLine("remainingpath :" + remainingPath);
             }
             return targeturi;
         }
@@ -100,6 +118,11 @@
         private void CopyFromTargetResponseHeaders(HttpResponseMessage responseMessage,HttpContext context)
         {
             foreach(var header in responseMessage.Headers)
+            {
+                context.Response.Headers[header.Key] = header.Value.ToArray();
+            }
+
+            foreach (var header in responseMessage.Content.Headers)
             {
                 context.Response.Headers[header.Key] = header.Value.ToArray();
             }
