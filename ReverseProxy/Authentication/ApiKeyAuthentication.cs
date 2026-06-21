@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using ReverseProxy.Database;
+using ReverseProxy.Redis;
 
 namespace ReverseProxy.Authentication
 {
@@ -8,14 +9,18 @@ namespace ReverseProxy.Authentication
     {
         private readonly RequestDelegate _nextMiddleware;
         private const string ApiKeyheaderName = "X-Api-Key";
-        private readonly IConfiguration _configuration;
+        private readonly IRedisCaching _cache;
+
         private readonly IServiceScopeFactory _scopefactory;
 
-        public ApiKeyAuthentication(RequestDelegate nextMiddleware,IConfiguration configuration,IServiceScopeFactory scopeFactory)
+
+
+        public ApiKeyAuthentication(RequestDelegate nextMiddleware,IServiceScopeFactory scopeFactory,IRedisCaching cache)
         {
             _nextMiddleware = nextMiddleware;
-            _configuration = configuration;
+       
             _scopefactory = scopeFactory;
+            _cache = cache;
         }
 
         public async Task Invoke(HttpContext context)
@@ -40,23 +45,29 @@ namespace ReverseProxy.Authentication
             {
                 using (var scope = _scopefactory.CreateScope())
                 {
-                    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                    var result =await dbContext.ApiKeys.FirstOrDefaultAsync(keys => keys.id == ParsedKey);
-
-
-
-
-
-
-                    if (result!=null)
+                    var cacheResult = _cache.GetData<string>($"apikey:{ParsedKey}");
+                    if (cacheResult != null)
                     {
                         return true;
                     }
                     else
                     {
-                        return false;
+                        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        var dbresult = await dbContext.ApiKeys.FirstOrDefaultAsync(keys => keys.id == ParsedKey);
+
+
+                        if (dbresult != null)
+                        {
+                            _cache.SetData<string>($"apikey:{ParsedKey}", ParsedKey.ToString());
+                            return true;
+                        }
+                        else
+                        {
+                            return false;
+                        }
                     }
-                   
+
+              
                 }
                
             }

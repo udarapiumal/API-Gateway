@@ -7,7 +7,8 @@ using ReverseProxy.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddScoped<IRedisCaching, RedisService>();
+builder.Services.AddSingleton<IRedisCaching, RedisService>();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
 );
