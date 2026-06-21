@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
+using ReverseProxy.Database;
 
 namespace ReverseProxy.Authentication
 {
@@ -7,18 +9,21 @@ namespace ReverseProxy.Authentication
         private readonly RequestDelegate _nextMiddleware;
         private const string ApiKeyheaderName = "X-Api-Key";
         private readonly IConfiguration _configuration;
+        private readonly IServiceScopeFactory _scopefactory;
 
-        public ApiKeyAuthentication(RequestDelegate nextMiddleware,IConfiguration configuration)
+        public ApiKeyAuthentication(RequestDelegate nextMiddleware,IConfiguration configuration,IServiceScopeFactory scopeFactory)
         {
             _nextMiddleware = nextMiddleware;
             _configuration = configuration;
+            _scopefactory = scopeFactory;
         }
 
         public async Task Invoke(HttpContext context)
         {
             string apikey = context.Request.Headers[ApiKeyheaderName];
+            apikey = "550e8400-e29b-41d4-a716-446655440000";
 
-            if (!ApiKeyValid(apikey))
+            if (!await ApiKeyValid(apikey))
             {
                 context.Response.StatusCode = 401;
                 context.Response.ContentType = "application/json";
@@ -29,19 +34,34 @@ namespace ReverseProxy.Authentication
             await _nextMiddleware(context);
         }
 
-        public bool ApiKeyValid(string? apikey)
+        public async Task<bool> ApiKeyValid(string? apikey)
         {
-            string ActualApiKey = _configuration.GetValue<string>("ApiKey");
-            Console.WriteLine("apikeymy"+ActualApiKey);
+            if (apikey != null && Guid.TryParse(apikey,out var ParsedKey))
+            {
+                using (var scope = _scopefactory.CreateScope())
+                {
+                    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var result =await dbContext.ApiKeys.FirstOrDefaultAsync(keys => keys.id == ParsedKey);
 
-            if(apikey == ActualApiKey)
-            {
-                return true;
+
+
+
+
+
+                    if (result!=null)
+                    {
+                        return true;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                   
+                }
+               
             }
-            else
-            {
-                return false;
-            }
+            return false;
+           
            
         }
 
