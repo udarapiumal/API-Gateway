@@ -92,6 +92,7 @@ namespace ReverseProxy
                 )
             {
                 var streamContent = new StreamContent(context.Request.Body);
+                requestMessage.Content = streamContent;
             }
 
             foreach(var header in context.Request.Headers)

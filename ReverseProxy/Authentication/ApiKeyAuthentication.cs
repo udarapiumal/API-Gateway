@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using ReverseProxy.Database;
 using ReverseProxy.Redis;
+using System.Diagnostics;
 
 namespace ReverseProxy.Authentication
 {
@@ -12,15 +13,17 @@ namespace ReverseProxy.Authentication
         private readonly IRedisCaching _cache;
 
         private readonly IServiceScopeFactory _scopefactory;
+        private readonly ILogger<ApiKeyAuthentication> _logger;
 
 
 
-        public ApiKeyAuthentication(RequestDelegate nextMiddleware,IServiceScopeFactory scopeFactory,IRedisCaching cache)
+        public ApiKeyAuthentication(RequestDelegate nextMiddleware,IServiceScopeFactory scopeFactory,IRedisCaching cache,ILogger<ApiKeyAuthentication> logger)
         {
             _nextMiddleware = nextMiddleware;
        
             _scopefactory = scopeFactory;
             _cache = cache;
+            _logger = logger;
         }
 
         public async Task Invoke(HttpContext context)
@@ -45,7 +48,12 @@ namespace ReverseProxy.Authentication
             {
                 using (var scope = _scopefactory.CreateScope())
                 {
+                    var stopwatch = Stopwatch.StartNew();
                     var cacheResult = _cache.GetData<string>($"apikey:{ParsedKey}");
+                    stopwatch.Stop();
+                    _logger.LogInformation("Cache Hit |Redis cache query took {ElapsedMs}ms for key: apikey:{ParsedKey}",
+               stopwatch.Elapsed.TotalMilliseconds, ParsedKey);
+
                     if (cacheResult != null)
                     {
                         return true;
@@ -53,7 +61,11 @@ namespace ReverseProxy.Authentication
                     else
                     {
                         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        var stopwatch2 = Stopwatch.StartNew();
                         var dbresult = await dbContext.ApiKeys.FirstOrDefaultAsync(keys => keys.id == ParsedKey);
+                        stopwatch2.Stop();
+                        _logger.LogInformation("Cache Mss |Db query took {ElapsedMs}ms for key: apikey:{ParsedKey}",
+             stopwatch2.Elapsed.TotalMilliseconds, ParsedKey);
 
 
                         if (dbresult != null)
