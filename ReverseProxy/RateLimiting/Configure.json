@@ -1,0 +1,14 @@
+{
+  "RedisRateLimits": [
+    {
+      "Path": "/api/ratelimited/limited",
+      "Window": "30s",
+      "MaxRequests": 5
+    },
+    {
+      "PathRegex": "/api/*",
+      "Window": "1d",
+      "MaxRequests": 1000
+    }
+  ]
+}
