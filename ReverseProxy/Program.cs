@@ -2,12 +2,18 @@ using Microsoft.EntityFrameworkCore;
 using ReverseProxy;
 using ReverseProxy.Authentication;
 using ReverseProxy.Database;
+using ReverseProxy.RateLimiting;
 using ReverseProxy.Redis;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddSingleton<IRedisCaching, RedisService>();
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis"))
+);
+
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
@@ -25,6 +31,7 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
+app.UseSlidingWindowRateLimiter();
 
 app.UseMiddleware<ReverseProxyMiddleware>();
 

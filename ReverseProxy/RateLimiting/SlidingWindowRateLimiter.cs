@@ -52,5 +52,48 @@ namespace ReverseProxy.RateLimiting
             _config = config;
             _next = next;
         }
+
+
+        public IEnumerable<RateLimitRule> GetApplicableRules(HttpContext context)
+        {
+            var limits = _config.GetSection("RedisRateLimits").Get<RateLimitRule[]>();
+            var applicableRules = limits
+                .Where(x => x.MatchPath(context.Request.Path))
+                .OrderBy(x => x.MaxRequests)
+                .GroupBy(x => new { x.PathKey, x.WindowSeconds })
+                .Select(x => x.First());
+            return applicableRules;
+        }
+
+        private async Task<bool> IsLimited(IEnumerable<RateLimitRule> rules,string apikey)
+        {
+            var keys = rules.Select(x => new RedisKey($"{x.PathKey} : {{{apikey}}} :{x.WindowSeconds}")).ToArray();
+            var args = new List<RedisValue> { rules.Count() };
+            foreach(var rule in rules)
+            {
+                args.Add(rule.WindowSeconds);
+                args.Add(rule.MaxRequests);
+            }
+            return (int)await _db.ScriptEvaluateAsync(SlidingRateLimiterScript, keys, args.ToArray()) == 1;
+        }
+        public async Task InvokeAsync(HttpContext context)
+        {
+            var apikey = "550e8400-e29b-41d4-a716-446655440000";
+            if (string.IsNullOrEmpty(apikey))
+            {
+                context.Response.StatusCode = 401;
+                return;
+            }
+            var applicableRules = GetApplicableRules(context);
+            var limited = await IsLimited(applicableRules, apikey);
+            if (limited)
+            {
+                context.Response.StatusCode = 429;
+                return;
+            }
+            await _next(context);
+        }
+
+
     }
 }
