@@ -6,6 +6,8 @@ using ReverseProxy.RateLimiting;
 using ReverseProxy.Redis;
 using StackExchange.Redis;
 
+
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
@@ -24,6 +26,15 @@ builder.Services.AddStackExchangeRedisCache(options => {
     options.InstanceName = "cache";
 });
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000") // Your React URL
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
 
 var app = builder.Build();
 
@@ -31,11 +42,13 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
+app.UseCors("AllowFrontend");
 app.UseSlidingWindowRateLimiter();
 
+app.UseMiddleware<ApiKeyAuthentication>();
 app.UseMiddleware<ReverseProxyMiddleware>();
 
-app.UseMiddleware<ApiKeyAuthentication>();
+
 
 app.UseHttpsRedirection();
 
@@ -49,3 +62,5 @@ app.MapFallback(async (context) =>
 });
 
 app.Run();
+
+public partial class Program { }

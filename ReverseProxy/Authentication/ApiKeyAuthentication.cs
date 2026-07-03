@@ -29,7 +29,7 @@ namespace ReverseProxy.Authentication
         public async Task Invoke(HttpContext context)
         {
             string apikey = context.Request.Headers[ApiKeyheaderName];
-            apikey = "550e8400-e29b-41d4-a716-446655440000";
+            //apikey = "550e8400-e29b-41d4-a716-446655440000";
 
             if (!await ApiKeyValid(apikey))
             {

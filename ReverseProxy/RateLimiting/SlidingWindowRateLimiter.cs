@@ -78,19 +78,41 @@ namespace ReverseProxy.RateLimiting
         }
         public async Task InvokeAsync(HttpContext context)
         {
-            var apikey = "550e8400-e29b-41d4-a716-446655440000";
+            // Read API key from header, not hardcoded
+            var apikey = context.Request.Headers["X-Api-Key"].ToString();
+
             if (string.IsNullOrEmpty(apikey))
             {
                 context.Response.StatusCode = 401;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync("Unauthorized");
                 return;
             }
-            var applicableRules = GetApplicableRules(context);
+
+            var applicableRules = GetApplicableRules(context).ToList();
+
+            // No rules match this path — allow the request through
+            if (!applicableRules.Any())
+            {
+                await _next(context);
+                return;
+            }
+
             var limited = await IsLimited(applicableRules, apikey);
+
             if (limited)
             {
+                // Use shortest window as Retry-After value
+                // meaning "wait this many seconds and your oldest request will have expired"
+                var shortestWindow = applicableRules.Min(r => r.WindowSeconds);
+
                 context.Response.StatusCode = 429;
+                context.Response.Headers["Retry-After"] = shortestWindow.ToString();
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync("Rate limit exceeded. Try again later.");
                 return;
             }
+
             await _next(context);
         }
 
