@@ -36,6 +36,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddHostedService<ConsumerService>();
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -43,6 +44,8 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 app.UseCors("AllowFrontend");
+
+app.UseMiddleware<AsyncLoggingMiddleware>();
 app.UseSlidingWindowRateLimiter();
 
 app.UseMiddleware<ApiKeyAuthentication>();

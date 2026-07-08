@@ -11,6 +11,6 @@ namespace ReverseProxy.Database
         }
 
         public DbSet<ApiKey> ApiKeys { get; set; }
-
+        public DbSet<RequestLog> RequestLogs { get; set; }
     }
 }
