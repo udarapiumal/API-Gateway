@@ -30,7 +30,7 @@ namespace ReverseProxy.Controllers
             {
                 totalRequests = totalRequests,
                 avgResponseTimeMs = avgMs,
-                errorRate = (noOferrors / totalRequests) * 100,
+                errorRate = totalRequests == 0 ? 0 : ((double)noOferrors / totalRequests) * 100,
                 activeApikeys = activeApiKeys
 
             };
@@ -57,6 +57,91 @@ namespace ReverseProxy.Controllers
 
             return Ok(results);
         }
+
+        [HttpGet]
+        [Route("statuscodes")]
+        public async Task<IActionResult> GetStatusCodes()
+        {
+            var results = await _dbContext.RequestLogs.
+                GroupBy(x => x.StatusCode).
+                Select(g => new StatusCodesDto
+                {
+                    statusCode = g.Key,
+                    count = g.Count()
+                })
+                .ToListAsync();
+
+            return Ok(results);
+        }
+
+        [HttpGet]
+        [Route("paths")]
+        public async Task<IActionResult> GetPaths()
+        {
+            var results = await _dbContext.RequestLogs
+                  .GroupBy(x => x.Path)
+                  .Select(g => new PathsDto
+                  {
+                      path = g.Key,
+                      requests = g.Count(),
+                      avgMs = g.Average(x => x.ResponseTimeMs),
+                      errorRate = (double)g.Count(x => x.StatusCode != 200) / g.Count() * 100
+                  })
+                  .OrderByDescending(x => x.requests)
+                  .ToListAsync();
+
+            return Ok(results);
+        }
+        [HttpGet]
+        [Route("apikeys")]
+        public async Task<IActionResult> GetApiKeys()
+        {
+            var results = await _dbContext.RequestLogs
+                 .GroupBy(x => x.ApiKey)
+                 .Select(g => new ApiKeyDto
+                 {
+                     apikey = g.Key,
+                     requests = g.Count(),
+                     avgMs = g.Average(x => x.ResponseTimeMs),
+                     lastSeen = g.Max(x => x.Timestamp)
+                 })
+                 .OrderByDescending(x => x.requests)
+                 .ToListAsync();
+
+            return Ok(results);
+        }
+        [HttpGet]
+        [Route("recent")]
+        public async Task<IActionResult> GetRecent()
+        {
+            var results = await _dbContext.RequestLogs
+                 .OrderByDescending(x => x.Timestamp)
+                 .Take(20)
+                 .ToListAsync();
+
+            return Ok(results);
+        }
+        [HttpGet]
+        [Route("distribution")]
+        public async Task<IActionResult> GetDistribution()
+        {
+            var under10 = await _dbContext.RequestLogs.CountAsync(x => x.ResponseTimeMs < 10);
+            var under50 = await _dbContext.RequestLogs.CountAsync(x => x.ResponseTimeMs <= 50);
+            var under100 = await _dbContext.RequestLogs.CountAsync(x => x.ResponseTimeMs <= 100);
+            var over10 = await _dbContext.RequestLogs.CountAsync(x => x.ResponseTimeMs >= 100);
+
+            var distributionDto = new DistributionDto
+            {
+                under10 = under10,
+                under50 = under50,
+                under100 = under100,
+                over100 = over10
+            };
+
+    
+            return Ok(distributionDto);
+        }
+
 
 
 
