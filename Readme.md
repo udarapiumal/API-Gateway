@@ -1,10 +1,5 @@
 # GateKeeper — High-Performance .NET 10 API Gateway
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)
-![Redis](https://img.shields.io/badge/Redis-7.0-red.svg)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16.0-blue.svg)
-
 **GateKeeper** is a lightweight, high-throughput API Gateway built with **.NET 10**. It features config-driven reverse proxying, sliding-window rate limiting via Redis, TTL-backed API key authentication caching, and asynchronous request telemetry using Redis Streams and a dedicated background consumer worker.
 
 ---
