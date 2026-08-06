@@ -49,7 +49,7 @@ namespace ReverseProxy
                     var scope = _scopefactory.CreateScope();
 
                     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
+                     
                     var log = new RequestLog
                     {
                         ApiKey = dict["apikey"],

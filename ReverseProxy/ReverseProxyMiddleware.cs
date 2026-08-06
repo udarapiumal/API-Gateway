@@ -1,4 +1,5 @@
-﻿using System.Net.Sockets;
+﻿using ReverseProxy.Models;
+using System.Net.Sockets;
 
 namespace ReverseProxy
 {
@@ -6,10 +7,12 @@ namespace ReverseProxy
     {
         private static readonly HttpClient _httpClient = new HttpClient();
         private readonly RequestDelegate _nextMiddleware;
+        private readonly IConfiguration _config;
 
-        public ReverseProxyMiddleware(RequestDelegate nextMiddleware)
+        public ReverseProxyMiddleware(RequestDelegate nextMiddleware , IConfiguration config)
         {
             _nextMiddleware = nextMiddleware;
+            _config = config;
         }
 
         public async Task Invoke(HttpContext context)
@@ -54,16 +57,20 @@ namespace ReverseProxy
         }
 
 
-        private Uri BuildTargetUri(HttpRequest request)
+        private Uri? BuildTargetUri(HttpRequest request)
         {
-            Uri targeturi = null;
+            var routes = _config.GetSection("Routes").Get<RouteConfig[]>();
 
-            if(request.Path.StartsWithSegments("/products", out var remainingPath ))
+            if (routes == null) return null;
+
+            foreach (var route in routes)
             {
-                targeturi = new Uri("https://localhost:7162/api/Product/get" + remainingPath);
-                Console.WriteLine("remainingpath :" + remainingPath);
+                if (request.Path.StartsWithSegments(route.path, out var remaining))
+                {
+                    return new Uri(route.Target + remaining);
+                }
             }
-            return targeturi;
+            return null;
         }
 
         private HttpRequestMessage CreateRequestMessage(HttpContext context,Uri targetUri)

@@ -22,7 +22,7 @@ namespace ReverseProxy.Controllers
         public async Task<IActionResult> Getsummary()
         {
             var totalRequests = await _dbContext.RequestLogs.CountAsync();
-            var avgMs = await _dbContext.RequestLogs.AverageAsync(x => x.ResponseTimeMs);
+            var avgMs = await _dbContext.RequestLogs.AverageAsync(x => (double?)x.ResponseTimeMs) ?? 0;
             var noOferrors = await _dbContext.RequestLogs.CountAsync(x => x.StatusCode != 200);
             var activeApiKeys = await _dbContext.RequestLogs.Select(x => x.ApiKey).Distinct().CountAsync();
 
@@ -43,16 +43,21 @@ namespace ReverseProxy.Controllers
         public async Task<IActionResult> GetTimeSeries()
         {
             var results = await _dbContext.RequestLogs.
-                Where(x => x.Timestamp >= DateTime.UtcNow.AddMinutes(-60))
-                .GroupBy(x => new DateTime(x.Timestamp.Year, x.Timestamp.Month,
-    x.Timestamp.Day, x.Timestamp.Hour, x.Timestamp.Minute, 0))
-                .Select(g => new TimeSeriesDto
-                {
-                    time = g.Key,
-                    requests = g.Count()
-                })
-                .OrderBy(x => x.time)
-                .ToListAsync();
+               Where(x => x.Timestamp >= DateTime.UtcNow.AddMinutes(-60))
+.GroupBy(x => new DateTime(
+    x.Timestamp.ToLocalTime().Year,
+    x.Timestamp.ToLocalTime().Month,
+    x.Timestamp.ToLocalTime().Day,
+    x.Timestamp.ToLocalTime().Hour,
+    x.Timestamp.ToLocalTime().Minute,
+    0))
+.Select(g => new TimeSeriesDto
+{
+    time = g.Key,
+    requests = g.Count()
+})
+.OrderBy(x => x.time)
+.ToListAsync();
 
 
             return Ok(results);

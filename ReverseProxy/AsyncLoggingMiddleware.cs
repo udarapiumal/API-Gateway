@@ -20,6 +20,12 @@ namespace ReverseProxy
 
         public async Task Invoke(HttpContext context)
         {
+            if (context.Request.Path.StartsWithSegments("/api/dashboard"))
+            {
+                await _nextMiddlware(context);
+                return;
+            }
+
             var stopwatch = Stopwatch.StartNew(); 
 
             await _nextMiddlware(context); 
