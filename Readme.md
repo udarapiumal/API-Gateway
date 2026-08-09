@@ -1,59 +1,271 @@
 # GateKeeper — High-Performance .NET 10 API Gateway
 
-**GateKeeper** is a lightweight, high-throughput API Gateway built with **.NET 10**. It features config-driven reverse proxying, sliding-window rate limiting via Redis, TTL-backed API key authentication caching, and asynchronous request telemetry using Redis Streams and a dedicated background consumer worker.
+**GateKeeper** is a lightweight, self-hosted API Gateway built with **.NET 10**. It sits in front of your backend services and handles authentication, rate limiting, request logging, and analytics — so your services don't have to.
+
+> Inspired by Kong, AWS API Gateway, and WSO2 API Manager — built from scratch to understand what happens under the hood.
 
 ---
 
+## Features
 
-### Request Flow
-1. **Async Logging Middleware:** Measures total request lifecycle execution time and writes structured request metadata (`apikey`, `path`, `method`, `statuscode`, `ms`) asynchronously to a **Redis Stream** (`gateway:logs`) to keep hot-path latency low.
-2. **Sliding Window Rate Limiter:** Evaluates window rate limits using configurable path patterns (e.g., `/products` limited to 100 requests per 60s window). Returns `429 Too Many Requests` when limits are breached.
-3. **API Key Authentication:** Validates the `X-Api-Key` request header against a sub-millisecond **Redis TTL cache**. On cache misses, queries **PostgreSQL** and populates the Redis cache dynamically.
-4. **Reverse Proxying:** Dynamically forwards authorized traffic to configured backend microservice targets.
-5. **Background Telemetry Consumer:** A hosted service continuously processes batch items from the Redis Stream and commits log records to **PostgreSQL**.
+- **Config-driven reverse proxying** — add routes in `appsettings.json`, no code changes needed
+- **API key authentication** — validates `X-Api-Key` header with sub-millisecond Redis TTL cache
+- **Sliding window rate limiting** — atomic Lua scripts on Redis Sorted Sets, per-key tiered limits (free/paid)
+- **Async request telemetry** — Redis Streams pipeline decouples logging from the hot path
+- **Background consumer worker** — batch processes stream events and writes to PostgreSQL
+- **Real-time analytics dashboard** — React + TypeScript UI showing request volume, error rates, latency distribution, and per-key usage
 
 ---
 
-## Performance & Load Test Results (k6)
+## Architecture
 
-Load testing was executed using **k6** with **10 Virtual Users (VUs)** over a **30-second steady load** scenario against the `/products` gateway endpoint.
+```mermaid
+graph TD
+    Client["Client / API Consumer"]
+    GK["GateKeeper Gateway (.NET 10)"]
+    Redis["Redis\n(Cache + Rate Limit + Stream)"]
+    PG["PostgreSQL\n(API Keys + Request Logs)"]
+    Backend["Your Backend Service"]
+    Consumer["Background Consumer\n(LogConsumerService)"]
+    Dashboard["React Dashboard"]
 
-### Core Benchmarks
-| Metric | Measured Value |
-| :--- | :--- |
-| **Throughput (RPS)** | **93.78 req/sec** |
-| **Median (P50) Latency** | **1.94 ms** |
-| **P90 Latency** | **2.26 ms** |
-| **P95 Latency** | **3.00 ms** |
-| **Passed Requests (200 OK)** | **100 requests** |
-| **Blocked Requests (429 Rate Limited)** | **2,718 requests** |
-| **Success / Block Check Ratio** | **99.86%** |
+    Client -->|"X-Api-Key + Request"| GK
+    GK -->|"1. Log to Stream (XADD)"| Redis
+    GK -->|"2. Check rate limit (Lua)"| Redis
+    GK -->|"3. Validate API key"| Redis
+    Redis -->|"Cache miss → query"| PG
+    GK -->|"4. Forward request"| Backend
+    Backend -->|"Response"| GK
+    GK -->|"Response"| Client
+    Redis -->|"XREADGROUP"| Consumer
+    Consumer -->|"Batch write logs"| PG
+    Dashboard -->|"GET /api/dashboard/*"| GK
+    GK -->|"Analytics queries"| PG
+```
 
-### Key Performance Highlights
-- **Sub-3ms Latency:** 95% of all gateway requests completed within **3.00 ms** (median **1.94 ms**), proving ultra-low middleware overhead.
-- **Strict Limiter Accuracy:** Exactly **100 requests** were allowed through before rate-limiting logic capped execution. The remaining 2,718 burst requests were instantly throttled with `429 Too Many Requests`.
-- **Zero Critical Failures:** No `500 Internal Server Error` responses were produced under continuous concurrent load.
+---
+
+## Request Flow
+
+Every request passes through the following middleware pipeline in order:
+
+```
+Incoming Request
+      │
+      ▼
+┌─────────────────────────────┐
+│  AsyncLoggingMiddleware     │  Starts stopwatch, pushes log event to
+│                             │  Redis Stream after response completes
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│  SlidingWindowRateLimiter   │  Checks per-key request count using
+│                             │  atomic Lua script on Redis Sorted Set
+│                             │  → 429 Too Many Requests if exceeded
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│  ApiKeyAuthentication       │  Validates X-Api-Key header
+│                             │  Redis cache hit → <1ms
+│                             │  Cache miss → PostgreSQL query
+│                             │  → 401 Unauthorized if invalid
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│  ReverseProxyMiddleware     │  Matches path to configured route
+│                             │  Forwards request to backend
+│                             │  Returns backend response to client
+└─────────────────────────────┘
+```
+
+---
+
+## Performance — k6 Load Test Results
+
+Load tested with **10 Virtual Users** over a **30-second steady load** scenario.
+
+| Metric | Value |
+|:---|:---|
+| **Throughput** | **93.78 req/sec** |
+| **P50 Latency** | **1.94ms** |
+| **P90 Latency** | **2.26ms** |
+| **P95 Latency** | **3.00ms** |
+| **Requests passed (200 OK)** | 100 |
+| **Requests blocked (429)** | 2,718 |
+| **Server errors (500)** | 0 |
+
+**Key highlights:**
+- 95% of requests completed in under **3ms** including auth + rate limit checks
+- Rate limiter allowed exactly 100 requests (configured limit) and blocked all remaining burst traffic
+- Zero server errors under sustained concurrent load
 
 ---
 
 ## Tech Stack
 
-- **Framework:** .NET 10 (ASP.NET Core Web API)
-- **Data Stores:** PostgreSQL 16 (Entity Framework Core / Npgsql)
-- **Caching & Streaming:** Redis 7 (StackExchange.Redis / Distributed Cache)
-- **Containerization:** Docker & Docker Compose
-- **Benchmarking:** k6
+| Layer | Technology |
+|:---|:---|
+| Gateway | .NET 10, ASP.NET Core |
+| Database | PostgreSQL 16, Entity Framework Core |
+| Cache & Queue | Redis 7, StackExchange.Redis |
+| Rate Limiting | Redis Sorted Sets + Lua scripts |
+| Async Pipeline | Redis Streams (XADD / XREADGROUP / XACK) |
+| Frontend | React, TypeScript, Tailwind CSS, shadcn/ui |
+| Charts | ApexCharts, Recharts |
+| Testing | xUnit, k6 |
+| Container | Docker, Docker Compose |
 
 ---
 
-## Getting Started (Docker Compose)
+## Getting Started
 
 ### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed.
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- A backend service to proxy to
 
-### Run the Infrastructure
+### 1. Clone the repository
+```bash
+git clone https://github.com/udarapiumal/API-Gateway.git
+cd API-Gateway
+```
 
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/your-username/GateKeeper.git](https://github.com/your-username/GateKeeper.git)
-   cd GateKeeper
+### 2. Configure your routes
+
+Edit `appsettings.json` and point routes to your backend services:
+```json
+"Routes": [
+  {
+    "Path": "/products",
+    "Target": "http://your-backend:8080/api/products"
+  },
+  {
+    "Path": "/orders",
+    "Target": "http://your-backend:8080/api/orders"
+  }
+]
+```
+
+### 3. Add your API keys
+
+After the gateway starts, insert API keys into PostgreSQL:
+```sql
+INSERT INTO "ApiKeys" (id, owner, tier)
+VALUES (
+  '550e8400-e29b-41d4-a716-446655440000',
+  'my-service',
+  'free'
+);
+```
+
+### 4. Start the gateway
+```bash
+docker-compose up --build
+```
+
+Gateway will be available at `http://localhost:7097`.
+
+### 5. Make authenticated requests
+```bash
+curl -H "X-Api-Key: 550e8400-e29b-41d4-a716-446655440000" \
+     http://localhost:7097/products
+```
+
+---
+
+## Rate Limiting
+
+Rate limits are configured per path in `appsettings.json`:
+
+```json
+"RedisRateLimits": [
+  {
+    "Path": "/products",
+    "Window": "60s",
+    "MaxRequests": 100
+  }
+]
+```
+
+When a key exceeds its limit the gateway returns:
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+
+Rate limit exceeded. Try again later.
+```
+
+---
+
+## Analytics Dashboard
+
+The gateway includes a real-time React dashboard accessible at `http://localhost:5173`:
+
+- **Stats bar** — total requests, avg response time, error rate, active API keys
+- **Request volume** — line chart of requests per minute (last 60 min)
+- **Status codes** — donut chart showing 200/429/401 distribution
+- **Response time distribution** — bar chart of latency buckets
+- **Top paths** — table with request count, avg latency, error rate per route
+- **API key usage** — per-key request count, avg latency, last seen
+- **Live request feed** — real-time scrolling log of recent requests
+
+---
+
+## API Endpoints
+
+### Gateway (proxied routes)
+```
+GET /products     → proxied to configured backend
+GET /orders       → proxied to configured backend
+```
+
+### Analytics Dashboard
+```
+GET /api/dashboard/summary       → total requests, avg ms, error rate, active keys
+GET /api/dashboard/timeseries    → request volume per minute (last 60 min)
+GET /api/dashboard/statuscodes   → request count grouped by status code
+GET /api/dashboard/paths         → top paths with request count and error rate
+GET /api/dashboard/apikeys       → API key usage with last seen timestamp
+GET /api/dashboard/recent        → last 20 requests
+GET /api/dashboard/distribution  → response time distribution buckets
+```
+
+---
+
+## Running Tests
+
+```bash
+cd ReverseProxy.Tests
+
+# Unit tests only (no dependencies needed)
+dotnet test --filter "FullyQualifiedName~UnitTests"
+
+# Integration tests (Redis + PostgreSQL must be running)
+dotnet test --filter "FullyQualifiedName~IntegrationTests"
+
+# All tests
+dotnet test
+```
+
+### Load testing with k6
+```bash
+k6 run loadTesting.js
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+## Contributing
+
+Pull requests are welcome. For major changes please open an issue first to discuss what you'd like to change.
+
+---
+
+*Built as a portfolio project to demonstrate system design concepts: caching, rate limiting, async pipelines, and observability.*
