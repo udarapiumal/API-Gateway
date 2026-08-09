@@ -97,7 +97,7 @@ Load tested with **10 Virtual Users** over a **30-second steady load** scenario.
 | Layer | Technology |
 |:---|:---|
 | Gateway | .NET 10, ASP.NET Core |
-| Database | PostgreSQL 16, Entity Framework Core |
+| Database | PostgreSQL 17, Entity Framework Core |
 | Cache & Queue | Redis 7, StackExchange.Redis |
 | Rate Limiting | Redis Sorted Sets + Lua scripts |
 | Async Pipeline | Redis Streams (XADD / XREADGROUP / XACK) |
