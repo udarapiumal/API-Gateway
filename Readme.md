@@ -20,27 +20,15 @@
 ## Architecture
 
 ```mermaid
-graph TD
-    Client["Client / API Consumer"]
-    GK["GateKeeper Gateway (.NET 10)"]
-    Redis["Redis\n(Cache + Rate Limit + Stream)"]
-    PG["PostgreSQL\n(API Keys + Request Logs)"]
-    Backend["Your Backend Service"]
-    Consumer["Background Consumer\n(LogConsumerService)"]
-    Dashboard["React Dashboard"]
-
-    Client -->|"X-Api-Key + Request"| GK
-    GK -->|"1. Log to Stream (XADD)"| Redis
-    GK -->|"2. Check rate limit (Lua)"| Redis
-    GK -->|"3. Validate API key"| Redis
-    Redis -->|"Cache miss → query"| PG
-    GK -->|"4. Forward request"| Backend
-    Backend -->|"Response"| GK
-    GK -->|"Response"| Client
-    Redis -->|"XREADGROUP"| Consumer
-    Consumer -->|"Batch write logs"| PG
-    Dashboard -->|"GET /api/dashboard/*"| GK
-    GK -->|"Analytics queries"| PG
+graph LR
+    Client["Client"] -->|HTTP Request| GK["GateKeeper"]
+    GK -->|Check rate limit| Redis["Redis"]
+    GK -->|Validate API key| Redis
+    Redis -->|Cache miss| PG["PostgreSQL"]
+    GK -->|Forward request| Backend["Backend"]
+    GK -->|Log event| RS["Redis Stream"]
+    RS -->|Consume| Worker["Worker"]
+    Worker -->|Write| PG
 ```
 
 ---
@@ -256,11 +244,7 @@ k6 run loadTesting.js
 
 ---
 
-## License
 
-MIT — see [LICENSE](LICENSE) for details.
-
----
 
 ## Contributing
 
