@@ -1,4 +1,4 @@
-# GateKeeper — High-Performance .NET 10 API Gateway
+# GateKeeper .NET 10 API Gateway
 
 **GateKeeper** is a lightweight, self-hosted API Gateway built with **.NET 10**. It sits in front of your backend services and handles authentication, rate limiting, request logging, and analytics — so your services don't have to.
 
