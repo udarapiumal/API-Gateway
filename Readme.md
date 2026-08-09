@@ -244,12 +244,3 @@ k6 run loadTesting.js
 
 ---
 
-
-
-## Contributing
-
-Pull requests are welcome. For major changes please open an issue first to discuss what you'd like to change.
-
----
-
-*Built as a portfolio project to demonstrate system design concepts: caching, rate limiting, async pipelines, and observability.*
